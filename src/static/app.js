@@ -12,6 +12,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Clear loading message
       activitiesList.innerHTML = "";
+      activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
 
       // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
@@ -114,8 +115,22 @@ document.addEventListener("DOMContentLoaded", () => {
   signupForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    const email = document.getElementById("email").value;
+    const email = document.getElementById("email").value.trim();
     const activity = document.getElementById("activity").value;
+
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      messageDiv.textContent = "Please enter a valid student email.";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+      return;
+    }
+
+    if (!activity) {
+      messageDiv.textContent = "Please select an activity.";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+      return;
+    }
 
     try {
       const response = await fetch(
@@ -127,10 +142,19 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       );
 
-      const result = await response.json();
+      const text = await response.text();
+      let result = {};
+
+      if (text) {
+        try {
+          result = JSON.parse(text);
+        } catch {
+          result = { detail: text };
+        }
+      }
 
       if (response.ok) {
-        messageDiv.textContent = result.message;
+        messageDiv.textContent = result.message || "Signed up successfully.";
         messageDiv.className = "success";
         signupForm.reset();
 

@@ -5,22 +5,19 @@ A super simple FastAPI application that allows students to view and sign up
 for extracurricular activities at Mergington High School.
 """
 
+import json
+from copy import deepcopy
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import os
 from pathlib import Path
 
-app = FastAPI(title="Mergington High School API",
-              description="API for viewing and signing up for extracurricular activities")
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
+DATA_FILE = DATA_DIR / "activities.json"
 
-# Mount the static files directory
-current_dir = Path(__file__).parent
-app.mount("/static", StaticFiles(directory=os.path.join(Path(__file__).parent,
-          "static")), name="static")
-
-# In-memory activity database
-activities = {
+DEFAULT_ACTIVITIES = {
     "Chess Club": {
         "description": "Learn strategies and compete in chess tournaments",
         "schedule": "Fridays, 3:30 PM - 5:00 PM",
@@ -78,6 +75,40 @@ activities = {
 }
 
 
+def load_activities():
+    if DATA_FILE.exists():
+        try:
+            with DATA_FILE.open("r", encoding="utf-8") as infile:
+                loaded_activities = json.load(infile)
+            if isinstance(loaded_activities, dict) and loaded_activities:
+                return loaded_activities
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    save_activities(deepcopy(DEFAULT_ACTIVITIES))
+    return deepcopy(DEFAULT_ACTIVITIES)
+
+
+def save_activities(activities_data):
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with DATA_FILE.open("w", encoding="utf-8") as outfile:
+        json.dump(activities_data, outfile, indent=2)
+        outfile.write("\n")
+
+
+app = FastAPI(title="Mergington High School API",
+              description="API for viewing and signing up for extracurricular activities")
+
+# Mount the static files directory
+current_dir = Path(__file__).parent
+app.mount("/static", StaticFiles(directory=os.path.join(Path(__file__).parent,
+          "static")), name="static")
+
+# Persist activity data to disk so it survives application restarts.
+activities = load_activities()
+
+
 @app.get("/")
 def root():
     return RedirectResponse(url="/static/index.html")
@@ -105,8 +136,16 @@ def signup_for_activity(activity_name: str, email: str):
             detail="Student is already signed up"
         )
 
-    # Add student
+    # Validate the activity has available spots
+    if len(activity["participants"]) >= activity["max_participants"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Activity is full"
+        )
+
+    # Add student and persist the updated state
     activity["participants"].append(email)
+    save_activities(activities)
     return {"message": f"Signed up {email} for {activity_name}"}
 
 
@@ -127,6 +166,7 @@ def unregister_from_activity(activity_name: str, email: str):
             detail="Student is not signed up for this activity"
         )
 
-    # Remove student
+    # Remove student and persist the updated state
     activity["participants"].remove(email)
+    save_activities(activities)
     return {"message": f"Unregistered {email} from {activity_name}"}
